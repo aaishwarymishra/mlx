@@ -129,7 +129,7 @@ class Module(dict):
         Update the model's weights from a ``.npz``, a ``.safetensors`` file, or a list.
 
         Args:
-            file_or_weights (str or list(tuple(str, mx.array))): The path to
+            file_or_weights (str or list(tuple(str, array))): The path to
                 the weights ``.npz`` file (``.npz`` or ``.safetensors``) or a list
                 of pairs of parameter names and arrays.
             strict (bool, optional): If ``True`` then checks that the provided
@@ -461,6 +461,16 @@ class Module(dict):
                     raise KeyError(f"Module doesn't contain member {k}.")
         return keys
 
+    def _validate_keys_recursive(self, keys):
+        # A key such as "bias" is expected to be present somewhere in the model
+        # but not necessarily in every single submodule, so validate against the
+        # whole model rather than each module in isolation.
+        keys = keys if isinstance(keys, list) else [keys]
+        modules = self.modules()
+        for k in keys:
+            if not any(k in m for m in modules):
+                raise KeyError(f"Module doesn't contain member {k}.")
+
     def freeze(
         self,
         *,
@@ -511,6 +521,9 @@ class Module(dict):
             m._no_grad.update(local_keys)
 
         if recurse:
+            if strict and keys is not None:
+                self._validate_keys_recursive(keys)
+                strict = False
             self.apply_to_modules(_freeze_impl)
         else:
             _freeze_impl("", self)
@@ -561,6 +574,9 @@ class Module(dict):
                 m._no_grad.difference_update(local_keys)
 
         if recurse:
+            if strict and keys is not None:
+                self._validate_keys_recursive(keys)
+                strict = False
             self.apply_to_modules(_unfreeze_impl)
         else:
             _unfreeze_impl("", self)
